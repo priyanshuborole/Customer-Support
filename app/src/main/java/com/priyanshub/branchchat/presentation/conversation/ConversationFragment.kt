@@ -1,0 +1,102 @@
+package com.priyanshub.branchchat.presentation.conversation
+
+import android.content.Context
+import android.os.Bundle
+import androidx.fragment.app.Fragment
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Toast
+import androidx.core.widget.doAfterTextChanged
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.navArgs
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.priyanshub.branchchat.R
+import com.priyanshub.branchchat.common.Constants
+import com.priyanshub.branchchat.databinding.FragmentConversationBinding
+import com.priyanshub.branchchat.databinding.FragmentMessageThreadBinding
+import com.priyanshub.branchchat.domain.models.message.Message
+import com.priyanshub.branchchat.domain.models.message.MessageRequest
+import com.priyanshub.branchchat.presentation.message.ItemClickListener
+import com.priyanshub.branchchat.presentation.message.MessageThreadAdapter
+import com.priyanshub.branchchat.presentation.message.MessageThreadViewModel
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@AndroidEntryPoint
+class ConversationFragment : Fragment() {
+
+    private lateinit var binding: FragmentConversationBinding
+    private val viewModel: ConversationViewModel by viewModels()
+    private lateinit var conversationAdapter: ConversationAdapter
+    private val args : ConversationFragmentArgs by navArgs()
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View{
+        binding = FragmentConversationBinding.inflate(layoutInflater,container,false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        setupRecyclerView(emptyList())
+        val sharedPreference =  requireActivity().getSharedPreferences(Constants.SHARED_PREF_NAME, Context.MODE_PRIVATE)
+        val token = sharedPreference.getString(Constants.TOKEN,"")
+
+        binding.progressBar.visibility = View.VISIBLE
+        lifecycleScope.launch(Dispatchers.IO) {
+            val list  =  viewModel.getMessagesForThreadId(token.toString(),args.threadId)
+            withContext(Dispatchers.Main) {
+                if (list.isNotEmpty()) {
+                    conversationAdapter.updateList(list)
+                    binding.progressBar.visibility = View.GONE
+                } else {
+                    Toast.makeText(requireContext(), "Issue In Fetching Data", Toast.LENGTH_SHORT)
+                        .show()
+                }
+            }
+        }
+
+        binding.btnSend.setOnClickListener {
+            if (!binding.etReply.text.isNullOrBlank()){
+                val snackbar = Constants.snackBarTemplate(binding.root,"Sending Message....")
+                snackbar.show()
+                val messageRequest = MessageRequest(args.threadId, binding.etReply.text.toString())
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val message = viewModel.sendMessage(token.toString(),messageRequest)
+                    withContext(Dispatchers.Main){
+                        conversationAdapter.addMessage(message)
+                        snackbar.dismiss()
+                        binding.etReply.setText("")
+                    }
+                }
+            }
+        }
+
+        binding.ivReset.setOnClickListener {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val isReset = viewModel.reset(token.toString())
+                withContext(Dispatchers.Main){
+                    if (isReset){
+                        conversationAdapter.reset()
+                        Toast.makeText(requireContext(), "Cleared Agent's chat", Toast.LENGTH_SHORT).show()
+                    }
+                    else{
+                        Toast.makeText(requireContext(), "Not able to reset", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+    private fun setupRecyclerView(list: List<Message>) {
+        conversationAdapter = ConversationAdapter(ArrayList(list))
+        binding.rvConvoThread.apply {
+            adapter = conversationAdapter
+            layoutManager = LinearLayoutManager(requireContext())
+        }
+    }
+}
