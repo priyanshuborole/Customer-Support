@@ -38,6 +38,9 @@ class ConversationFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View{
         binding = FragmentConversationBinding.inflate(layoutInflater,container,false)
+        val sharedPreference =  requireActivity().getSharedPreferences(Constants.SHARED_PREF_NAME, Context.MODE_PRIVATE)
+        val token = sharedPreference.getString(Constants.TOKEN,"")
+        viewModel.getMessagesForThreadId(token.toString(),args.threadId)
         return binding.root
     }
 
@@ -47,49 +50,46 @@ class ConversationFragment : Fragment() {
         val sharedPreference =  requireActivity().getSharedPreferences(Constants.SHARED_PREF_NAME, Context.MODE_PRIVATE)
         val token = sharedPreference.getString(Constants.TOKEN,"")
 
-        binding.progressBar.visibility = View.VISIBLE
-        lifecycleScope.launch(Dispatchers.IO) {
-            val list  =  viewModel.getMessagesForThreadId(token.toString(),args.threadId)
-            withContext(Dispatchers.Main) {
-                if (list.isNotEmpty()) {
-                    conversationAdapter.updateList(list)
-                    binding.progressBar.visibility = View.GONE
-                } else {
-                    Toast.makeText(requireContext(), "Issue In Fetching Data", Toast.LENGTH_SHORT)
-                        .show()
-                }
+        viewModel.getMessageResponse.observe(viewLifecycleOwner){list->
+            if (list.isEmpty()){
+                Toast.makeText(requireContext(), "Issue In Fetching Data", Toast.LENGTH_SHORT).show()
+            }
+            else {
+                conversationAdapter.updateList(list)
             }
         }
 
+        viewModel.getMessage.observe(viewLifecycleOwner){message->
+            conversationAdapter.addMessage(message)
+        }
+
+        viewModel.showProgress.observe(viewLifecycleOwner){showProgress->
+            binding.progressBar.visibility = if (showProgress) View.VISIBLE else View.GONE
+        }
+
+        viewModel.isReset.observe(viewLifecycleOwner){
+            if (it) {
+                conversationAdapter.reset()
+                Toast.makeText(requireContext(), "Cleared Agent's chat", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(requireContext(), "Not able to reset", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+
         binding.btnSend.setOnClickListener {
+            val snackbar = Constants.snackBarTemplate(binding.root,"Sending Message....")
+            snackbar.show()
             if (!binding.etReply.text.isNullOrBlank()){
-                val snackbar = Constants.snackBarTemplate(binding.root,"Sending Message....")
-                snackbar.show()
                 val messageRequest = MessageRequest(args.threadId, binding.etReply.text.toString())
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val message = viewModel.sendMessage(token.toString(),messageRequest)
-                    withContext(Dispatchers.Main){
-                        conversationAdapter.addMessage(message)
-                        snackbar.dismiss()
-                        binding.etReply.setText("")
-                    }
-                }
+                viewModel.sendMessage(token.toString(),messageRequest)
+                binding.etReply.setText("")
+                snackbar.dismiss()
             }
         }
 
         binding.ivReset.setOnClickListener {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val isReset = viewModel.reset(token.toString())
-                withContext(Dispatchers.Main){
-                    if (isReset){
-                        conversationAdapter.reset()
-                        Toast.makeText(requireContext(), "Cleared Agent's chat", Toast.LENGTH_SHORT).show()
-                    }
-                    else{
-                        Toast.makeText(requireContext(), "Not able to reset", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
+            viewModel.reset(token.toString())
         }
     }
     private fun setupRecyclerView(list: List<Message>) {

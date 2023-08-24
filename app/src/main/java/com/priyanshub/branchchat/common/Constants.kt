@@ -5,7 +5,7 @@ import com.google.android.material.snackbar.Snackbar
 
 class Constants {
     companion object {
-        const val BASE_URL = "BASE URL"
+        const val BASE_URL = "YOUR BASE URL"
         const val SHARED_PREF_NAME = "sp_branch"
         const val TOKEN = "token"
 
